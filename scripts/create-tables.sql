@@ -4,10 +4,10 @@ CREATE TABLE IF NOT EXISTS tracks (
   title VARCHAR(255) NOT NULL,
   artist VARCHAR(255) NOT NULL,
   genre VARCHAR(100) NOT NULL,
-  bpm INTEGER NOT NULL,
+  bitrate INTEGER NOT NULL, -- Alterado de bpm para bitrate
   style VARCHAR(100) NOT NULL,
-  category VARCHAR(50) NOT NULL,
-  thumbnail TEXT,
+  category VARCHAR(50) NOT NULL, -- NEW, FEATURED, TRENDING, CHARTS
+  thumbnail TEXT, -- URL da imagem
   play_url TEXT,
   download_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS user_actions (
   UNIQUE(user_id, track_id, action_type)
 );
 
--- Inserir música de exemplo
-INSERT INTO tracks (title, artist, genre, bpm, style, category, thumbnail, play_url, download_url) 
+-- Inserir música de exemplo (se ainda não existir)
+INSERT INTO tracks (title, artist, genre, bitrate, style, category, thumbnail, play_url, download_url) 
 VALUES (
   'VERSACE ON THE FLOOR (BRUNO MARS VS. DAVID GUETTA)',
   'DAVID GUETTA',
@@ -36,4 +36,4 @@ VALUES (
   '/placeholder.svg?height=60&width=60',
   'https://drive.google.com/uc?export=download&id=1QO7J4Mo_GaF92FTBrtS8XcczLekjiBDV',
   'https://drive.google.com/uc?export=download&id=1QO7J4Mo_GaF92FTBrtS8XcczLekjiBDV'
-) ON CONFLICT DO NOTHING;
+) ON CONFLICT (title, artist, genre, bitrate, style) DO NOTHING; -- Adicionado ON CONFLICT para evitar duplicatas
