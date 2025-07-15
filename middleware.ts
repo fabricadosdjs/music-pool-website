@@ -9,7 +9,12 @@ const isPublicRoute = createRouteMatcher([
 ])
 
 export default clerkMiddleware((auth, req) => {
-  if (!isPublicRoute(req)) auth().protect()
+  // Adicione este log para depuração
+  console.log("CLERK_SECRET_KEY is set:", !!process.env.CLERK_SECRET_KEY)
+
+  if (!isPublicRoute(req)) {
+    auth().protect()
+  }
 })
 
 export const config = {
