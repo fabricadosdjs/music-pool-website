@@ -97,10 +97,17 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     .from("profiles")
     .select("*") // Selecionar todos os campos do perfil
     .eq("id", user.id)
-    .single()
+    .maybeSingle()
 
-  if (profileError && profileError.code !== "PGRST116") {
-    console.error("Erro ao obter perfil:", profileError.message)
+  if (profileError) {
+    // Supabase can raise "infinite recursion detected" when an RLS
+    // policy references the same table. Treat that as "no profile".
+    if (profileError.message?.includes("infinite recursion detected")) {
+      console.warn("RLS recursion while fetching profile – returning user without profile")
+    } else if (profileError.code !== "PGRST116") {
+      // PGRST116 is "No rows found"
+      console.error("Erro ao obter perfil:", profileError.message)
+    }
   }
 
   return {
@@ -125,10 +132,17 @@ export async function getAuthenticatedUser(): Promise<AuthUser | null> {
     .from("profiles")
     .select("*") // Selecionar todos os campos do perfil
     .eq("id", user.id)
-    .single()
+    .maybeSingle()
 
-  if (profileError && profileError.code !== "PGRST116") {
-    console.error("Erro ao obter perfil (server):", profileError.message)
+  if (profileError) {
+    // Supabase can raise "infinite recursion detected" when an RLS
+    // policy references the same table. Treat that as "no profile".
+    if (profileError.message?.includes("infinite recursion detected")) {
+      console.warn("RLS recursion while fetching profile – returning user without profile")
+    } else if (profileError.code !== "PGRST116") {
+      // PGRST116 is "No rows found"
+      console.error("Erro ao obter perfil (server):", profileError.message)
+    }
   }
 
   return {
