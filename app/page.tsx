@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
-import { Search, Download, Play, Pause, Heart, Music, Shield, ChevronDown, Check } from "lucide-react"
+import { Search, Download, Play, Pause, Heart, Music, Shield, ChevronDown, Check, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,108 +9,13 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { useUser, SignInButton, SignOutButton } from "@clerk/nextjs"
-
-// Mock data para as músicas organizadas por categoria
-const musicData = {
-  NEW: [
-    {
-      id: 1,
-      title: "VERSACE ON THE FLOOR (BRUNO MARS VS. DAVID GUETTA)",
-      artist: "DAVID GUETTA",
-      genre: "FUNK",
-      bpm: 100,
-      style: "Remix",
-      date: "2024-01-15",
-      thumbnail: "/placeholder.svg?height=60&width=60",
-      playUrl: "https://drive.google.com/uc?export=download&id=1QO7J4Mo_GaF92FTBrtS8XcczLekjiBDV",
-      downloadUrl: "https://drive.google.com/uc?export=download&id=1QO7J4Mo_GaF92FTBrtS8XcczLekjiBDV",
-    },
-    {
-      id: 2,
-      title: "Summer Vibes",
-      artist: "DJ Alex",
-      genre: "House",
-      bpm: 128,
-      style: "Original",
-      date: "2024-01-15",
-      thumbnail: "/placeholder.svg?height=60&width=60",
-      playUrl: "#",
-      downloadUrl: "#",
-    },
-  ],
-  FEATURED: [
-    {
-      id: 3,
-      title: "Night Drive",
-      artist: "Producer Mike",
-      genre: "Techno",
-      bpm: 132,
-      style: "Extended Mix",
-      date: "2024-01-14",
-      thumbnail: "/placeholder.svg?height=60&width=60",
-      playUrl: "#",
-      downloadUrl: "#",
-    },
-    {
-      id: 4,
-      title: "Deep House Session",
-      artist: "DJ Sarah",
-      genre: "House",
-      bpm: 124,
-      style: "Club Mix",
-      date: "2024-01-13",
-      thumbnail: "/placeholder.svg?height=60&width=60",
-      playUrl: "#",
-      downloadUrl: "#",
-    },
-  ],
-  TRENDING: [
-    {
-      id: 5,
-      title: "Tropical Beats",
-      artist: "DJ Sarah",
-      genre: "Reggaeton",
-      bpm: 95,
-      style: "Radio Edit",
-      date: "2024-01-14",
-      thumbnail: "/placeholder.svg?height=60&width=60",
-      playUrl: "#",
-      downloadUrl: "#",
-    },
-    {
-      id: 6,
-      title: "Latin Fire",
-      artist: "Producer Carlos",
-      genre: "Reggaeton",
-      bpm: 98,
-      style: "Dub Mix",
-      date: "2024-01-13",
-      thumbnail: "/placeholder.svg?height=60&width=60",
-      playUrl: "#",
-      downloadUrl: "#",
-    },
-  ],
-  CHARTS: [
-    {
-      id: 7,
-      title: "Electronic Dreams",
-      artist: "DJ Alex",
-      genre: "EDM",
-      bpm: 140,
-      style: "Festival Mix",
-      date: "2024-01-14",
-      thumbnail: "/placeholder.svg?height=60&width=60",
-      playUrl: "#",
-      downloadUrl: "#",
-    },
-  ],
-}
+import { useUser, SignInButton, UserButton } from "@clerk/nextjs"
+import { supabase, type Track, type UserAction } from "@/lib/supabase"
 
 const genres = ["House", "Techno", "EDM", "Reggaeton", "Hip Hop", "Pop", "FUNK"]
 const artists = ["DJ Alex", "Producer Mike", "DJ Sarah", "Producer Carlos", "DAVID GUETTA"]
 const months = ["Janeiro 2024", "Dezembro 2023", "Novembro 2023", "Outubro 2023"]
-const categories = ["NEW", "FEATURED", "TRENDING", "CHARTS", "ADMIN"]
+const categories = ["HOME", "NEW", "FEATURED", "TRENDING", "CHARTS", "ADMIN"]
 
 export default function MusicPoolsPage() {
   const { isSignedIn, user, isLoaded } = useUser()
@@ -118,18 +23,109 @@ export default function MusicPoolsPage() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([])
   const [selectedArtists, setSelectedArtists] = useState<string[]>([])
   const [selectedMonths, setSelectedMonths] = useState<string[]>([])
-  const [activeCategory, setActiveCategory] = useState("NEW")
+  const [activeCategory, setActiveCategory] = useState("HOME")
+  const [tracks, setTracks] = useState<Track[]>([])
+  const [userActions, setUserActions] = useState<UserAction[]>([])
   const [downloadedTracks, setDownloadedTracks] = useState<Set<number>>(new Set())
   const [likedTracks, setLikedTracks] = useState<Set<number>>(new Set())
   const [playingTrack, setPlayingTrack] = useState<number | null>(null)
-  // Reusable <audio> element to avoid creating multiple instances
+  const [showAddTrackForm, setShowAddTrackForm] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [artistsOpen, setArtistsOpen] = useState(false)
   const [monthsOpen, setMonthsOpen] = useState(false)
 
-  const currentTracks = musicData[activeCategory as keyof typeof musicData] || []
+  // Carregar músicas do banco
+  useEffect(() => {
+    loadTracks()
+  }, [])
+
+  // Carregar ações do usuário quando logar
+  useEffect(() => {
+    if (isSignedIn && user) {
+      loadUserActions()
+    }
+  }, [isSignedIn, user])
+
+  const loadTracks = async () => {
+    const { data, error } = await supabase.from("tracks").select("*").order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Erro ao carregar músicas:", error)
+      // Fallback para dados mock se não conseguir conectar
+      setTracks([
+        {
+          id: 1,
+          title: "VERSACE ON THE FLOOR (BRUNO MARS VS. DAVID GUETTA)",
+          artist: "DAVID GUETTA",
+          genre: "FUNK",
+          bpm: 100,
+          style: "Remix",
+          category: "NEW",
+          thumbnail: "/placeholder.svg?height=60&width=60",
+          play_url: "https://drive.google.com/uc?export=download&id=1QO7J4Mo_GaF92FTBrtS8XcczLekjiBDV",
+          download_url: "https://drive.google.com/uc?export=download&id=1QO7J4Mo_GaF92FTBrtS8XcczLekjiBDV",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ])
+    } else {
+      setTracks(data || [])
+    }
+  }
+
+  const loadUserActions = async () => {
+    if (!user) return
+
+    const { data, error } = await supabase.from("user_actions").select("*").eq("user_id", user.id)
+
+    if (!error && data) {
+      setUserActions(data)
+      const downloads = new Set(data.filter((a) => a.action_type === "download").map((a) => a.track_id))
+      const likes = new Set(data.filter((a) => a.action_type === "like").map((a) => a.track_id))
+      setDownloadedTracks(downloads)
+      setLikedTracks(likes)
+    }
+  }
+
+  const getCurrentWeekTracks = () => {
+    const now = new Date()
+    const currentDay = now.getDay() // 0 = domingo, 1 = segunda, etc.
+    const startOfWeek = new Date(now)
+    startOfWeek.setDate(now.getDate() - currentDay + 1) // Segunda-feira
+    startOfWeek.setHours(0, 0, 0, 0)
+
+    const weekTracks = tracks.filter((track) => {
+      const trackDate = new Date(track.created_at)
+      return trackDate >= startOfWeek
+    })
+
+    // Agrupar por dia da semana
+    const groupedByDay: { [key: string]: Track[] } = {}
+    const dayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
+
+    weekTracks.forEach((track) => {
+      const trackDate = new Date(track.created_at)
+      const dayName = dayNames[trackDate.getDay()]
+      if (!groupedByDay[dayName]) {
+        groupedByDay[dayName] = []
+      }
+      groupedByDay[dayName].push(track)
+    })
+
+    // Ordenar para que o dia atual fique no topo
+    const todayName = dayNames[currentDay]
+    const orderedDays = [todayName, ...dayNames.filter((day) => day !== todayName)]
+
+    return { groupedByDay, orderedDays, todayName }
+  }
 
   const filteredTracks = useMemo(() => {
+    let currentTracks = tracks
+
+    if (activeCategory !== "HOME" && activeCategory !== "ADMIN") {
+      currentTracks = tracks.filter((track) => track.category === activeCategory)
+    }
+
     return currentTracks.filter((track) => {
       const matchesSearch =
         track.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -139,7 +135,7 @@ export default function MusicPoolsPage() {
 
       return matchesSearch && matchesGenre && matchesArtist
     })
-  }, [searchTerm, selectedGenres, selectedArtists, selectedMonths, currentTracks])
+  }, [searchTerm, selectedGenres, selectedArtists, tracks, activeCategory])
 
   const handleGenreChange = (genre: string, checked: boolean) => {
     if (checked) {
@@ -165,67 +161,127 @@ export default function MusicPoolsPage() {
     }
   }
 
-  const handleDownload = (track: any) => {
-    if (!isSignedIn) return
+  const handleDownload = async (track: Track) => {
+    if (!isSignedIn || !user) return
 
-    const newDownloaded = new Set(downloadedTracks)
-    if (newDownloaded.has(track.id)) {
-      newDownloaded.delete(track.id)
+    const isDownloaded = downloadedTracks.has(track.id)
+
+    if (isDownloaded) {
+      // Remover download
+      await supabase
+        .from("user_actions")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("track_id", track.id)
+        .eq("action_type", "download")
+
+      setDownloadedTracks((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(track.id)
+        return newSet
+      })
     } else {
-      newDownloaded.add(track.id)
-      // Abrir link de download em nova aba
-      if (track.downloadUrl && track.downloadUrl !== "#") {
-        window.open(track.downloadUrl, "_blank")
+      // Adicionar download
+      await supabase.from("user_actions").insert({
+        user_id: user.id,
+        track_id: track.id,
+        action_type: "download",
+      })
+
+      setDownloadedTracks((prev) => new Set([...prev, track.id]))
+
+      // Fazer download do arquivo
+      if (track.download_url && track.download_url !== "#") {
+        const link = document.createElement("a")
+        link.href = track.download_url
+        link.download = `${track.artist} - ${track.title}.mp3`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
       }
     }
-    setDownloadedTracks(newDownloaded)
   }
 
-  const handleLike = (trackId: number) => {
-    if (!isSignedIn) return
+  const handleLike = async (trackId: number) => {
+    if (!isSignedIn || !user) return
 
-    const newLiked = new Set(likedTracks)
-    if (newLiked.has(trackId)) {
-      newLiked.delete(trackId)
+    const isLiked = likedTracks.has(trackId)
+
+    if (isLiked) {
+      // Remover like
+      await supabase
+        .from("user_actions")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("track_id", trackId)
+        .eq("action_type", "like")
+
+      setLikedTracks((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(trackId)
+        return newSet
+      })
     } else {
-      newLiked.add(trackId)
+      // Adicionar like
+      await supabase.from("user_actions").insert({
+        user_id: user.id,
+        track_id: trackId,
+        action_type: "like",
+      })
+
+      setLikedTracks((prev) => new Set([...prev, trackId]))
     }
-    setLikedTracks(newLiked)
   }
 
-  const handlePlay = (track: any) => {
-    // Ignore if the track has no playable URL
-    if (!track.playUrl || track.playUrl === "#") return
+  const handlePlay = (track: Track) => {
+    if (!track.play_url || track.play_url === "#") return
 
-    // Lazily create the audio element once
     if (!audioRef.current) {
       audioRef.current = new Audio()
       audioRef.current.crossOrigin = "anonymous"
     }
 
-    // If the same track is currently playing, pause it
     if (playingTrack === track.id) {
       audioRef.current.pause()
       setPlayingTrack(null)
       return
     }
 
-    // Otherwise, load & play the selected track
     try {
       audioRef.current.pause()
-      audioRef.current.src = track.playUrl
+      audioRef.current.src = track.play_url
       audioRef.current.load()
       audioRef.current.play().catch(console.error)
       setPlayingTrack(track.id)
     } catch (err) {
-      // Silently handle the "NotSupportedError" or any other playback error
       console.error("Falha ao reproduzir o áudio:", err)
       setPlayingTrack(null)
     }
   }
 
+  const handleAddTrack = async (formData: FormData) => {
+    if (!isSignedIn || !user) return
+
+    const trackData = {
+      title: formData.get("title") as string,
+      artist: formData.get("artist") as string,
+      genre: formData.get("genre") as string,
+      bpm: Number.parseInt(formData.get("bpm") as string),
+      style: formData.get("style") as string,
+      category: formData.get("category") as string,
+      play_url: formData.get("play_url") as string,
+      download_url: formData.get("download_url") as string,
+    }
+
+    const { error } = await supabase.from("tracks").insert(trackData)
+
+    if (!error) {
+      setShowAddTrackForm(false)
+      loadTracks() // Recarregar músicas
+    }
+  }
+
   useEffect(() => {
-    // Pause audio when the component unmounts
     return () => {
       if (audioRef.current) {
         audioRef.current.pause()
@@ -244,13 +300,13 @@ export default function MusicPoolsPage() {
     )
   }
 
-  const TrackRow = ({ track }: { track: any }) => (
+  const TrackRow = ({ track }: { track: Track }) => (
     <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
       <td className="py-3 px-4">
         <div className="flex items-center gap-3">
           <div className="relative group">
             <img
-              src={track.thumbnail || "/placeholder.svg"}
+              src={track.thumbnail || "/placeholder.svg?height=60&width=60"}
               alt={track.title}
               className="w-12 h-12 rounded object-cover"
             />
@@ -266,7 +322,7 @@ export default function MusicPoolsPage() {
             </button>
           </div>
           <div className="flex-1">
-            <h3 className="font-medium text-gray-900 text-sm leading-tight">{track.title}</h3>
+            <h3 className="font-normal text-gray-900 text-sm leading-tight">{track.title}</h3>
           </div>
         </div>
       </td>
@@ -301,6 +357,99 @@ export default function MusicPoolsPage() {
     </tr>
   )
 
+  const AddTrackForm = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <h2 className="text-xl font-bold mb-4">Adicionar Nova Música</h2>
+        <form action={handleAddTrack} className="space-y-4">
+          <Input name="title" placeholder="Título da música" required />
+          <Input name="artist" placeholder="Artista" required />
+          <Input name="genre" placeholder="Gênero" required />
+          <Input name="bpm" type="number" placeholder="BPM" required />
+          <Input name="style" placeholder="Estilo" required />
+          <select name="category" className="w-full p-2 border rounded" required>
+            <option value="">Selecionar categoria</option>
+            <option value="NEW">NEW</option>
+            <option value="FEATURED">FEATURED</option>
+            <option value="TRENDING">TRENDING</option>
+            <option value="CHARTS">CHARTS</option>
+          </select>
+          <Input name="play_url" placeholder="URL para reprodução" />
+          <Input name="download_url" placeholder="URL para download" />
+          <div className="flex gap-2">
+            <Button type="submit" className="flex-1">
+              Adicionar
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setShowAddTrackForm(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+
+  const renderHomeContent = () => {
+    const { groupedByDay, orderedDays, todayName } = getCurrentWeekTracks()
+    const today = new Date().toLocaleDateString("pt-BR")
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="text-xl font-normal text-gray-900">New Music</h2>
+        </div>
+
+        {orderedDays.map((dayName, index) => {
+          const dayTracks = groupedByDay[dayName] || []
+          if (dayTracks.length === 0) return null
+
+          return (
+            <div key={dayName} className="space-y-3">
+              <div className="flex items-center gap-2">
+                <h3 className={`text-lg ${index === 0 ? "font-bold" : "font-normal"} text-gray-900`}>
+                  {index === 0 ? "Hoje" : dayName}
+                </h3>
+                {index === 0 && <span className="text-red-600 text-sm">{today}</span>}
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Música
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Artista
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Gênero
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        BPM
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Estilo
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Ações
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {dayTracks.map((track) => (
+                      <TrackRow key={track.id} track={track} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-white font-kanit">
       {/* Header */}
@@ -325,17 +474,25 @@ export default function MusicPoolsPage() {
               </div>
               {isSignedIn ? (
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-600">Olá, {user?.firstName}</span>
-                  <SignOutButton>
-                    <Button variant="outline" size="sm">
-                      Sair
-                    </Button>
-                  </SignOutButton>
+                  <UserButton
+                    appearance={{
+                      elements: {
+                        avatarBox: "w-8 h-8",
+                      },
+                    }}
+                  />
                 </div>
               ) : (
-                <SignInButton>
-                  <Button size="sm">Entrar</Button>
-                </SignInButton>
+                <div className="flex items-center gap-2">
+                  <SignInButton>
+                    <Button variant="outline" size="sm">
+                      Entrar
+                    </Button>
+                  </SignInButton>
+                  <SignInButton mode="modal">
+                    <Button size="sm">Criar Conta</Button>
+                  </SignInButton>
+                </div>
               )}
             </div>
           </div>
@@ -366,7 +523,7 @@ export default function MusicPoolsPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex gap-4">
-          {/* Sidebar com Filtros - Reduzido */}
+          {/* Sidebar com Filtros */}
           <div className="w-48 flex-shrink-0">
             <div className="bg-gray-50 rounded-lg p-4 sticky top-32">
               <h2 className="text-base font-semibold text-gray-900 mb-3">Filtros</h2>
@@ -482,8 +639,17 @@ export default function MusicPoolsPage() {
             </div>
           </div>
 
-          {/* Área Principal com Tabela de Músicas - Expandida */}
+          {/* Área Principal */}
           <div className="flex-1">
+            {activeCategory === "ADMIN" && isSignedIn && user?.publicMetadata?.role === "admin" && (
+              <div className="mb-4">
+                <Button onClick={() => setShowAddTrackForm(true)} className="flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  Adicionar Música
+                </Button>
+              </div>
+            )}
+
             <div className="mb-4 flex items-center justify-between">
               <p className="text-gray-600">
                 {filteredTracks.length} músicas em <span className="font-medium">{activeCategory}</span>
@@ -495,48 +661,54 @@ export default function MusicPoolsPage() {
               )}
             </div>
 
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Música
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Artista
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Gênero
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      BPM
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Estilo
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredTracks.map((track) => (
-                    <TrackRow key={track.id} track={track} />
-                  ))}
-                </tbody>
-              </table>
+            {activeCategory === "HOME" ? (
+              renderHomeContent()
+            ) : (
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Música
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Artista
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Gênero
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        BPM
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Estilo
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Ações
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredTracks.map((track) => (
+                      <TrackRow key={track.id} track={track} />
+                    ))}
+                  </tbody>
+                </table>
 
-              {filteredTracks.length === 0 && (
-                <div className="text-center py-12">
-                  <Music className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma música encontrada</h3>
-                  <p className="text-gray-600">Tente ajustar os filtros ou termo de busca</p>
-                </div>
-              )}
-            </div>
+                {filteredTracks.length === 0 && (
+                  <div className="text-center py-12">
+                    <Music className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma música encontrada</h3>
+                    <p className="text-gray-600">Tente ajustar os filtros ou termo de busca</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {showAddTrackForm && <AddTrackForm />}
     </div>
   )
 }
