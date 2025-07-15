@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss"
 
-const config: Config = {
+const config = {
   darkMode: ["class"],
   content: [
     "./pages/**/*.{ts,tsx}",
@@ -19,9 +19,6 @@ const config: Config = {
       },
     },
     extend: {
-      fontFamily: {
-        kanit: ["var(--font-kanit)"],
-      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

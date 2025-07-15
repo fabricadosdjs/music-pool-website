@@ -1,30 +1,35 @@
-# Music Pool website
+# Music Pools by Nexor Records
 
-*Automatically synced with your [v0.dev](https://v0.dev) deployments*
+This is a music pool website built with Next.js, Supabase, and Tailwind CSS.
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/fabricadosdjs-projects/v0-music-pool-website)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.dev-black?style=for-the-badge)](https://v0.dev/chat/projects/NbnJsw9q0se)
+## Features
 
-## Overview
+- User authentication (Sign up, Login, Logout)
+- User profiles with editable personal info and email preferences
+- Admin panel for managing user roles, paid status, and download limits
+- Music browsing by categories (Home, New, Liked, Trending, Charts)
+- Search and filter functionality for music tracks
+- Music playback and download (with subscription/admin control)
+- Responsive design
 
-This repository will stay in sync with your deployed chats on [v0.dev](https://v0.dev).
-Any changes you make to your deployed app will be automatically pushed to this repository from [v0.dev](https://v0.dev).
+## Setup
 
-## Deployment
+1.  **Clone the repository:**
+    \`\`\`bash
+    git clone https://github.com/your-repo/music-pools-website.git
+    cd music-pools-website
+    \`\`\`
 
-Your project is live at:
+2.  **Install dependencies:**
+    \`\`\`bash
+    npm install
+    # or
+    yarn install
+    # or
+    pnpm install
+    \`\`\`
 
-**[https://vercel.com/fabricadosdjs-projects/v0-music-pool-website](https://vercel.com/fabricadosdjs-projects/v0-music-pool-website)**
-
-## Build your app
-
-Continue building your app on:
-
-**[https://v0.dev/chat/projects/NbnJsw9q0se](https://v0.dev/chat/projects/NbnJsw9q0se)**
-
-## How It Works
-
-1. Create and modify your project using [v0.dev](https://v0.dev)
-2. Deploy your chats from the v0 interface
-3. Changes are automatically pushed to this repository
-4. Vercel deploys the latest version from this repository
+3.  **Set up Supabase:**
+    *   Create a new project on [Supabase](https://supabase.com/).
+    *   Go to `Settings > API` and copy your `Project URL` and `anon public` key.
+    *   Create a `.env.local` file in the root of your project and add:
