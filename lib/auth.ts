@@ -55,19 +55,13 @@ export async function signUpWithEmailAndPassword({
         recommendation_emails,
         free_download_emails,
       },
+      // Se a confirmação de e-mail estiver desativada no Supabase, o usuário será logado automaticamente.
+      // Caso contrário, ele precisará clicar no link de confirmação no e-mail.
+      // Não precisamos de emailRedirectTo aqui se a confirmação estiver desativada.
     },
   })
   if (error) {
     console.error("Erro ao criar conta:", error.message)
-    return { success: false, message: error.message }
-  }
-  return { success: true, user: data.user }
-}
-
-export async function verifyOtp(email: string, token: string, type: "email") {
-  const { data, error } = await supabase.auth.verifyOtp({ email, token, type })
-  if (error) {
-    console.error("Erro ao verificar OTP:", error.message)
     return { success: false, message: error.message }
   }
   return { success: true, user: data.user }

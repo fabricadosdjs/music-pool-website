@@ -1,6 +1,10 @@
 "use client"
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react"
+import { useMemo } from "react"
+
+import { useRef } from "react"
+
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -20,6 +24,7 @@ import {
   LogOut,
   User,
   Filter,
+  Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,6 +39,8 @@ import { toast } from "@/components/ui/use-toast"
 import Footer from "@/components/footer"
 import { AuthForm } from "@/components/auth-form"
 import { getCurrentUser, signOut, type AuthUser } from "@/lib/auth"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 const genres = ["House", "Techno", "EDM", "Reggaeton", "Hip Hop", "Pop", "FUNK"]
 const artists = ["DJ Alex", "Producer Mike", "DJ Sarah", "Producer Carlos", "DAVID GUETTA"]
@@ -43,6 +50,7 @@ const categories = ["HOME", "NEW", "LIKE", "TRENDING", "CHARTS", "ASSINAR", "ADM
 const TRACKS_PER_DAY_LIMIT = 100
 
 export default function MusicPoolsPage() {
+  const [showAuthModal, setShowAuthModal] = useState(false)
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loadingUser, setLoadingUser] = useState(true)
   const pathname = usePathname()
@@ -53,6 +61,7 @@ export default function MusicPoolsPage() {
   const [selectedMonths, setSelectedMonths] = useState<string[]>([])
   const [activeCategory, setActiveCategory] = useState("HOME")
   const [tracks, setTracks] = useState<Track[]>([])
+  const [loadingTracks, setLoadingTracks] = useState(true)
   const [userActions, setUserActions] = useState<UserAction[]>([])
   const [downloadedTracks, setDownloadedTracks] = useState<Set<number>>(new Set())
   const [likedTracks, setLikedTracks] = useState<Set<number>>(new Set())
@@ -63,20 +72,50 @@ export default function MusicPoolsPage() {
   const [artistsOpen, setArtistsOpen] = useState(false)
   const [monthsOpen, setMonthsOpen] = useState(false)
   const [visibleTracksCount, setVisibleTracksCount] = useState<{ [key: string]: number }>({})
+  const [filters, setFilters] = useState({ genre: "", style: "", category: "" })
+  const [showFilters, setShowFilters] = useState(false)
 
   const fetchUser = useCallback(async () => {
     setLoadingUser(true)
     const currentUser = await getCurrentUser()
     setUser(currentUser)
     setLoadingUser(false)
-    if (currentUser) {
-      loadUserActions(currentUser.id)
-    } else {
-      setUserActions([])
-      setDownloadedTracks(new Set())
-      setLikedTracks(new Set())
-    }
   }, [])
+
+  const fetchTracks = useCallback(async () => {
+    setLoadingTracks(true)
+    let query = supabase.from("tracks").select("*")
+
+    if (searchTerm) {
+      query = query.or(
+        `title.ilike.%${searchTerm}%,artist.ilike.%${searchTerm}%,genre.ilike.%${searchTerm}%,style.ilike.%${searchTerm}%`,
+      )
+    }
+    if (filters.genre) {
+      query = query.eq("genre", filters.genre)
+    }
+    if (filters.style) {
+      query = query.eq("style", filters.style)
+    }
+    if (filters.category) {
+      query = query.eq("category", filters.category)
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Erro ao carregar músicas:", error.message)
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar as músicas.",
+        variant: "destructive",
+      })
+      setTracks([])
+    } else {
+      setTracks(data || [])
+    }
+    setLoadingTracks(false)
+  }, [searchTerm, filters])
 
   useEffect(() => {
     fetchUser()
@@ -91,6 +130,10 @@ export default function MusicPoolsPage() {
   useEffect(() => {
     loadTracks()
   }, [])
+
+  useEffect(() => {
+    fetchTracks()
+  }, [fetchTracks])
 
   useEffect(() => {
     const currentPath = pathname.substring(1).toUpperCase()
@@ -255,79 +298,83 @@ export default function MusicPoolsPage() {
     }
   }
 
-  const handleDownload = async (track: Track) => {
-    if (!user || !user.profile) {
+  const handleLogout = async () => {
+    setLoadingUser(true)
+    const result = await signOut()
+    if (result.success) {
       toast({
-        title: "Login Necessário",
+        title: "Sucesso!",
+        description: "Logout realizado com sucesso.",
+      })
+      setUser(null)
+    } else {
+      toast({
+        title: "Erro no Logout",
+        description: result.message || "Não foi possível fazer logout.",
+        variant: "destructive",
+      })
+    }
+    setLoadingUser(false)
+  }
+
+  const handleDownload = async (track: Track) => {
+    if (!user) {
+      toast({
+        title: "Acesso Negado",
         description: "Você precisa estar logado para baixar músicas.",
         variant: "destructive",
       })
-      setShowAuthForm(true)
+      setShowAuthModal(true)
       return
     }
 
-    const isPaidUser = user.profile.is_paid_user
-    const downloadLimit = user.profile.download_limit
-
-    if (!isPaidUser) {
+    if (!user.profile?.is_paid_user) {
       toast({
-        title: "Assinatura Necessária",
-        description: "Você precisa assinar um plano para baixar músicas.",
+        title: "Acesso Negado",
+        description: "Você precisa ser um usuário pago para baixar músicas. Assine já!",
         variant: "destructive",
       })
       return
     }
 
-    // Placeholder for daily download limit enforcement
-    if (downloadLimit === "100_per_day" || downloadLimit === "200_per_day") {
+    if (user.profile.download_limit === "listen_only") {
       toast({
-        title: "Limite de Downloads",
-        description: `Seu plano permite ${downloadLimit.split("_")[0]} downloads por dia. Esta funcionalidade de limite diário precisa ser implementada no backend.`,
-        variant: "info",
-      })
-      // In a real app, you'd check daily download count here
-      // For now, we'll allow download if paid, regardless of daily limit.
-    } else if (downloadLimit === "listen_only") {
-      toast({
-        title: "Acesso Restrito",
-        description: "Seu plano atual permite apenas ouvir músicas, não baixar.",
+        title: "Acesso Negado",
+        description: "Seu plano atual permite apenas ouvir músicas. Atualize seu plano para baixar.",
         variant: "destructive",
       })
       return
     }
 
-    const isDownloaded = downloadedTracks.has(track.id)
+    // TODO: Implement daily download limit check here (e.g., 100_per_day, 200_per_day)
+    // This would require a backend mechanism to track daily downloads per user.
+    // For now, if is_paid_user is true and not 'listen_only', download is allowed.
 
-    if (isDownloaded) {
-      await supabase
-        .from("user_actions")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("track_id", track.id)
-        .eq("action_type", "download")
-
-      setDownloadedTracks((prev) => {
-        const newSet = new Set(prev)
-        newSet.delete(track.id)
-        return newSet
-      })
-    } else {
-      await supabase.from("user_actions").insert({
-        user_id: user.id,
-        track_id: track.id,
-        action_type: "download",
-      })
-
-      setDownloadedTracks((prev) => new Set([...prev, track.id]))
-
-      if (track.download_url && track.download_url !== "#") {
-        const link = document.createElement("a")
-        link.href = track.download_url
-        link.download = `${track.artist} - ${track.title}.mp3`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+    if (track.download_url) {
+      try {
+        // In a real app, you might want to use a server action to track downloads
+        // and then redirect to the download URL or serve the file.
+        window.open(track.download_url, "_blank")
+        toast({
+          title: "Download Iniciado",
+          description: `Baixando: ${track.title}`,
+        })
+        // Record user action
+        await supabase.from("user_actions").insert({ user_id: user.id, track_id: track.id, action_type: "download" })
+      } catch (error) {
+        console.error("Erro ao iniciar download:", error)
+        toast({
+          title: "Erro no Download",
+          description: "Não foi possível iniciar o download.",
+          variant: "destructive",
+        })
       }
+    } else {
+      toast({
+        title: "Erro",
+        description: "URL de download não disponível.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -438,6 +485,26 @@ export default function MusicPoolsPage() {
     }
   }
 
+  const handlePlay = (track: Track) => {
+    if (track.play_url) {
+      // Implement audio playback logic here
+      toast({
+        title: "Reproduzindo",
+        description: `Tocando: ${track.title}`,
+      })
+      // Record user action
+      if (user) {
+        supabase.from("user_actions").insert({ user_id: user.id, track_id: track.id, action_type: "play" })
+      }
+    } else {
+      toast({
+        title: "Erro",
+        description: "URL de reprodução não disponível.",
+        variant: "destructive",
+      })
+    }
+  }
+
   useEffect(() => {
     return () => {
       if (audioRef.current) {
@@ -455,29 +522,6 @@ export default function MusicPoolsPage() {
         </div>
       </div>
     )
-  }
-
-  const handlePlay = (track: Track) => {
-    if (playingTrack === track.id) {
-      setPlayingTrack(null)
-      if (audioRef.current) {
-        audioRef.current.pause()
-      }
-    } else {
-      setPlayingTrack(track.id)
-      if (audioRef.current) {
-        audioRef.current.src = track.play_url!
-        audioRef.current.play().catch((error) => {
-          console.error("Erro ao reproduzir áudio:", error)
-          toast({
-            title: "Erro ao Reproduzir",
-            description: "Houve um problema ao reproduzir a música.",
-            variant: "destructive",
-          })
-          setPlayingTrack(null)
-        })
-      }
-    }
   }
 
   const TrackRow = ({ track }: { track: Track }) => (
@@ -970,28 +1014,32 @@ export default function MusicPoolsPage() {
 
   const isAdmin = user?.profile?.role === "admin"
 
+  const uniqueGenres = Array.from(new Set(tracks.map((track) => track.genre)))
+  const uniqueStyles = Array.from(new Set(tracks.map((track) => track.style)))
+  const uniqueCategories = Array.from(new Set(tracks.map((track) => track.category)))
+
   return (
-    <div className="min-h-screen bg-white font-kanit flex flex-col">
+    <div className="flex flex-col min-h-screen bg-white font-kanit dark:bg-gray-900">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10 dark:bg-gray-800 shadow-sm py-4 px-6 flex items-center justify-between">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center">
-              <Music className="w-8 h-8 text-blue-600 mr-3" />
-              <h1 className="text-2xl font-bold text-gray-900">
+            <div className="flex items-center gap-4">
+              <Music className="w-8 h-8 text-blue-600 mr-3 dark:text-blue-400" />
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-50">
                 Music Pools <span className="text-blue-600">by Nexor Records</span>
               </h1>
             </div>
             <div className="flex items-center space-x-4">
               {/* Search Bar and Filters */}
               <div className="relative flex items-center gap-2">
-                <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <div className="relative w-full max-w-md">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" />
                   <Input
                     placeholder="Buscar músicas, artistas, estilos..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 w-64 pr-2"
+                    className="pl-10 w-64 pr-2 w-full pl-10 pr-4 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <Popover>
@@ -1021,29 +1069,42 @@ export default function MusicPoolsPage() {
                 </Popover>
               </div>
               {/* User Auth Buttons */}
-              {user ? (
-                <div className="flex items-center gap-3">
-                  <Button variant="ghost" size="sm" className="rounded-full flex items-center gap-1">
-                    <User className="w-4 h-4" />
-                    {user.profile?.username || user.email?.split("@")[0]}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={async () => {
-                      await signOut()
-                      toast({ title: "Logout", description: "Você foi desconectado." })
-                    }}
-                  >
-                    <LogOut className="w-4 h-4 mr-2" /> Sair
-                  </Button>
-                </div>
+              {loadingUser ? (
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              ) : user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+                      <User className="w-5 h-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56" align="end" forceMount>
+                    <DropdownMenuItem className="flex flex-col items-start space-y-1">
+                      <p className="text-sm font-medium leading-none">{user.profile?.username || user.email}</p>
+                      <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/profile">
+                        <User className="mr-2 h-4 w-4" />
+                        <span>Perfil</span>
+                      </Link>
+                    </DropdownMenuItem>
+                    {user.profile?.role === "admin" && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin">
+                          <Shield className="mr-2 h-4 w-4" />
+                          <span>Admin</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={handleLogout}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Sair</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ) : (
-                <div className="flex items-center gap-2">
-                  <Button size="sm" onClick={() => setShowAuthForm(true)}>
-                    Entrar / Criar Conta
-                  </Button>
-                </div>
+                <Button onClick={() => setShowAuthModal(true)}>Entrar</Button>
               )}
             </div>
           </div>
@@ -1209,6 +1270,65 @@ export default function MusicPoolsPage() {
           </div>
 
           {/* Área Principal */}
+          <main className="flex-1 p-6">
+            <section className="mb-8">
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-50 mb-6">Músicas Recentes</h2>
+              {loadingTracks ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <Card key={i} className="animate-pulse">
+                      <CardHeader>
+                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-24 bg-gray-200 rounded mb-4"></div>
+                        <div className="h-8 bg-gray-200 rounded w-full"></div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : tracks.length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-400 text-center">Nenhuma música encontrada.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {tracks.map((track) => (
+                    <Card key={track.id} className="flex flex-col">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-lg">{track.title}</CardTitle>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{track.artist}</p>
+                      </CardHeader>
+                      <CardContent className="flex-1 flex flex-col justify-between">
+                        {track.thumbnail && (
+                          <img
+                            src={track.thumbnail || "/placeholder.svg"}
+                            alt={track.title}
+                            width={200}
+                            height={200}
+                            className="w-full h-auto object-cover rounded-md mb-4"
+                          />
+                        )}
+                        <div className="flex justify-between items-center text-sm text-gray-600 dark:text-gray-300 mb-4">
+                          <span>Gênero: {track.genre}</span>
+                          <span>Estilo: {track.style}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button onClick={() => handlePlay(track)} className="flex-1">
+                            <Play className="w-4 h-4 mr-2" /> Ouvir
+                          </Button>
+                          <Button onClick={() => handleDownload(track)} className="flex-1" variant="secondary">
+                            <Download className="w-4 h-4 mr-2" /> Baixar
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </section>
+          </main>
+
+          {/* Área Principal */}
           <div className="flex-1">
             {activeCategory === "ADMIN" && isAdmin && (
               <div className="mb-4">
@@ -1286,6 +1406,7 @@ export default function MusicPoolsPage() {
         </div>
       </div>
       {showAddTrackForm && <AddTrackForm />}
+      {showAuthModal && <AuthForm onSuccess={() => setShowAuthModal(false)} onClose={() => setShowAuthModal(false)} />}
       {showAuthForm && <AuthForm onSuccess={() => setShowAuthForm(false)} onClose={() => setShowAuthForm(false)} />}
       <Footer />
     </div>

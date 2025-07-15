@@ -1,218 +1,187 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { Shield } from "lucide-react"
+import { useState, useEffect } from "react"
+import { getCurrentUser } from "@/lib/auth"
+import { supabase } from "@/lib/supabase"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/components/ui/use-toast"
-import { getCurrentUser, type AuthUser } from "@/lib/auth"
-import { supabase, type Profile } from "@/lib/supabase"
-
-// Tipos para o limite de download
-type DownloadLimit = "100_per_day" | "200_per_day" | "unlimited" | "listen_only"
-
-// Server Action placeholder for updating user status
-// You will need to implement this on your server (e.g., in a separate file like actions/user.ts)
-// This function should update the 'profiles' table in Supabase
-async function updateUserProfile(
-  userId: string,
-  updates: { is_paid_user?: boolean; download_limit?: DownloadLimit; role?: "user" | "admin" },
-) {
-  // In a real application, this would be a server action or API route
-  // that verifies admin role and updates the Supabase 'profiles' table.
-  // For now, this is a client-side mock.
-  console.log(`Mock: Updating user ${userId} with:`, updates)
-  const { data, error } = await supabase.from("profiles").update(updates).eq("id", userId)
-
-  if (error) {
-    console.error("Error updating user profile:", error.message)
-    return { success: false, message: `Failed to update profile: ${error.message}` }
-  }
-
-  return { success: true, message: `Perfil do usuário ${userId} atualizado com sucesso.` }
-}
+import { useRouter } from "next/navigation"
+import type { Profile } from "@/lib/supabase"
+import { updateAdminProfile } from "@/actions/profile"
 
 export default function AdminPage() {
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
-  const [loadingUser, setLoadingUser] = useState(true)
-  const [users, setUsers] = useState<Profile[]>([])
-  const [loadingUsers, setLoadingUsers] = useState(true)
-  const [filterUsername, setFilterUsername] = useState("")
+  const router = useRouter()
+  const [user, setUser] = useState<any>(null)
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
-  const fetchCurrentUser = useCallback(async () => {
-    setLoadingUser(true)
-    const user = await getCurrentUser()
-    setCurrentUser(user)
-    setLoadingUser(false)
-  }, [])
+  useEffect(() => {
+    async function fetchData() {
+      const currentUser = await getCurrentUser()
+      if (!currentUser || currentUser.profile?.role !== "admin") {
+        router.push("/") // Redireciona se não for admin
+        return
+      }
+      setUser(currentUser)
 
-  const fetchUsers = useCallback(async () => {
-    setLoadingUsers(true)
-    const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false })
-    if (error) {
-      console.error("Erro ao carregar usuários:", error.message)
+      const { data, error } = await supabase.from("profiles").select("*")
+      if (error) {
+        console.error("Erro ao buscar perfis:", error.message)
+        toast({
+          title: "Erro",
+          description: "Não foi possível carregar os perfis dos usuários.",
+          variant: "destructive",
+        })
+      } else {
+        setProfiles(data || [])
+      }
+      setLoading(false)
+    }
+    fetchData()
+  }, [router])
+
+  const handleUpdateProfile = async (profileId: string, field: keyof Profile, value: any) => {
+    setSubmitting(true)
+    const dataToUpdate: Partial<Profile> = { [field]: value }
+
+    const result = await updateAdminProfile(profileId, dataToUpdate)
+
+    if (result.success) {
+      toast({
+        title: "Sucesso!",
+        description: result.message,
+      })
+      // Atualiza o estado local para refletir a mudança
+      setProfiles((prevProfiles) => prevProfiles.map((p) => (p.id === profileId ? { ...p, [field]: value } : p)))
+    } else {
       toast({
         title: "Erro",
-        description: "Não foi possível carregar a lista de usuários.",
+        description: result.message || "Não foi possível atualizar o perfil.",
         variant: "destructive",
       })
-      setUsers([])
-    } else {
-      setUsers(data || [])
     }
-    setLoadingUsers(false)
-  }, [])
-
-  useEffect(() => {
-    fetchCurrentUser()
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      fetchCurrentUser()
-    })
-    return () => {
-      authListener.unsubscribe()
-    }
-  }, [fetchCurrentUser])
-
-  useEffect(() => {
-    if (currentUser?.profile?.role === "admin") {
-      fetchUsers()
-    }
-  }, [currentUser, fetchUsers])
-
-  const handlePaidStatusChange = async (userId: string, isPaid: boolean) => {
-    const result = await updateUserProfile(userId, { is_paid_user: isPaid })
-    if (result.success) {
-      toast({ title: "Sucesso!", description: result.message })
-      fetchUsers() // Recarregar usuários para refletir a mudança
-    } else {
-      toast({ title: "Erro", description: result.message, variant: "destructive" })
-    }
+    setSubmitting(false)
   }
 
-  const handleDownloadLimitChange = async (userId: string, limit: DownloadLimit) => {
-    const result = await updateUserProfile(userId, { download_limit: limit })
-    if (result.success) {
-      toast({ title: "Sucesso!", description: result.message })
-      fetchUsers()
-    } else {
-      toast({ title: "Erro", description: result.message, variant: "destructive" })
-    }
-  }
-
-  if (loadingUser || loadingUsers) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Carregando painel de administração...</p>
       </div>
     )
   }
 
-  const isAdmin = currentUser?.profile?.role === "admin"
-
-  if (!isAdmin) {
+  if (!user || user.profile?.role !== "admin") {
     return (
-      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="text-center py-12 bg-gray-50 rounded-lg w-full max-w-md">
-          <Shield className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Acesso Negado</h1>
-          <p className="text-gray-600">Você não tem permissão para acessar esta página.</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Acesso negado. Você não tem permissão para acessar esta página.</p>
       </div>
     )
   }
-
-  const filteredUsers = users.filter(
-    (user) =>
-      user.username.toLowerCase().includes(filterUsername.toLowerCase()) ||
-      user.first_name.toLowerCase().includes(filterUsername.toLowerCase()) ||
-      user.last_name.toLowerCase().includes(filterUsername.toLowerCase()),
-  )
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="bg-white rounded-lg p-8 shadow-lg w-full max-w-4xl">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6 text-center">Gerenciar Usuários</h1>
-
-        <div className="mb-4">
-          <Label htmlFor="user-filter" className="sr-only">
-            Filtrar Usuários
-          </Label>
-          <Input
-            id="user-filter"
-            type="text"
-            placeholder="Filtrar por nome de usuário, nome ou sobrenome..."
-            value={filterUsername}
-            onChange={(e) => setFilterUsername(e.target.value)}
-            className="w-full"
-          />
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Usuário
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Nome Completo
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pago</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Limite Download
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Ações
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredUsers.map((userProfile) => (
-                <tr key={userProfile.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {userProfile.username}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {userProfile.first_name} {userProfile.last_name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <Switch
-                      checked={userProfile.is_paid_user}
-                      onCheckedChange={(checked) => handlePaidStatusChange(userProfile.id, checked)}
-                      disabled={userProfile.role === "admin"} // Admins cannot change their own paid status via this UI
-                    />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <select
-                      value={userProfile.download_limit}
-                      onChange={(e) => handleDownloadLimitChange(userProfile.id, e.target.value as DownloadLimit)}
-                      className="p-2 border rounded text-sm"
-                      disabled={userProfile.role === "admin"} // Admins cannot change their own download limit via this UI
-                    >
-                      <option value="listen_only">Apenas Ouvir</option>
-                      <option value="100_per_day">100/dia</option>
-                      <option value="200_per_day">200/dia</option>
-                      <option value="unlimited">Ilimitado</option>
-                    </select>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{userProfile.role}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    {/* Adicione botões de ação adicionais aqui, se necessário */}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filteredUsers.length === 0 && (
-            <div className="text-center py-8 text-gray-500">Nenhum usuário encontrado.</div>
-          )}
-        </div>
-      </div>
+      <Card className="w-full max-w-4xl">
+        <CardHeader>
+          <CardTitle className="text-2xl font-bold text-center">Painel de Administração</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <h3 className="text-xl font-semibold mb-4">Gerenciar Usuários</h3>
+          <div className="space-y-6">
+            {profiles.length === 0 ? (
+              <p>Nenhum usuário registrado ainda.</p>
+            ) : (
+              profiles.map((profile) => (
+                <Card key={profile.id} className="p-4 shadow-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-center">
+                    <div>
+                      <Label>Email</Label>
+                      <Input value={profile.id} disabled />{" "}
+                      {/* Supabase user ID is the email in some cases, but it's the UUID */}
+                      <Input value={user.email} disabled />{" "}
+                      {/* This is the admin's email, not the user's. Need to fetch user email from auth.users table if needed. For now, profile.id is the user's UUID. */}
+                    </div>
+                    <div>
+                      <Label>Nome de Usuário</Label>
+                      <Input value={profile.username} disabled />
+                    </div>
+                    <div>
+                      <Label>Nome Completo</Label>
+                      <Input value={`${profile.first_name} ${profile.last_name}`} disabled />
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Label htmlFor={`paid-switch-${profile.id}`}>Usuário Pago</Label>
+                      <Switch
+                        id={`paid-switch-${profile.id}`}
+                        checked={profile.is_paid_user}
+                        onCheckedChange={(checked) => handleUpdateProfile(profile.id, "is_paid_user", checked)}
+                        disabled={submitting}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`download-limit-${profile.id}`}>Limite de Downloads</Label>
+                      <Select
+                        value={profile.download_limit}
+                        onValueChange={(value: Profile["download_limit"]) =>
+                          handleUpdateProfile(profile.id, "download_limit", value)
+                        }
+                        disabled={submitting}
+                      >
+                        <SelectTrigger id={`download-limit-${profile.id}`}>
+                          <SelectValue placeholder="Selecione o limite" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="listen_only">Apenas Ouvir</SelectItem>
+                          <SelectItem value="100_per_day">100 por dia</SelectItem>
+                          <SelectItem value="200_per_day">200 por dia</SelectItem>
+                          <SelectItem value="unlimited">Ilimitado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor={`next-due-date-${profile.id}`}>Próximo Vencimento</Label>
+                      <Input
+                        id={`next-due-date-${profile.id}`}
+                        type="date"
+                        value={profile.next_due_date ? profile.next_due_date.split("T")[0] : ""} // Formata para input type="date"
+                        onChange={(e) =>
+                          handleUpdateProfile(
+                            profile.id,
+                            "next_due_date",
+                            e.target.value ? new Date(e.target.value).toISOString() : null,
+                          )
+                        }
+                        disabled={submitting}
+                      />
+                    </div>
+                    <div>
+                      <Label>Função</Label>
+                      <Select
+                        value={profile.role}
+                        onValueChange={(value: Profile["role"]) => handleUpdateProfile(profile.id, "role", value)}
+                        disabled={submitting || profile.id === user.id} // Não permite mudar a própria função
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione a função" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="user">Usuário Comum</SelectItem>
+                          <SelectItem value="admin">Administrador</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

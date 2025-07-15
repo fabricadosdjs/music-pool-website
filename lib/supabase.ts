@@ -38,6 +38,7 @@ export type Profile = {
   role: "user" | "admin"
   created_at: string
   updated_at: string
+  next_due_date?: string // Nova coluna para o próximo vencimento (formato ISO string)
 }
 
 // Configuração do cliente Supabase
